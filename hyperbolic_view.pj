@@ -1,0 +1,15 @@
+@=
+projectType="application_plugin";
+projectName="hyperbolic_view";
+projectGUID="81C8D843-6B0A-4005-8DEA-E5473B200634";
+addProjectDirs=[CGV_DIR."/plugins", CGV_DIR."/libs", CGV_DIR."/3rd"];
+addProjectDeps=[
+	"cgv_utils", "cgv_type", "cgv_reflect", "cgv_reflect_types", "cgv_data", 
+	"cgv_signal", "cgv_os", "cgv_base", "cgv_math", "cgv_media", "cgv_gui", 
+	"cgv_render", "cgv_viewer","cg_fltk", "cgv_gl", "cg_gamepad", "gamepad", "cmi_io",
+	"crg_stereo_view", "crg_grid", "crg_light", "plot"
+];
+addShaderPaths=[INPUT_DIR];
+addCommandLineArguments=['config:"'.INPUT_DIR.'/hyberbolic_view.def"', after("SHADER_PATHS", "cg_fltk")];
+addSharedDefines= ["HYPERBOLIC_VIEW_EXPORTS"];
+

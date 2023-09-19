@@ -1,0 +1,40 @@
+#version 330 core
+
+uniform bool use_color_index;
+uniform vec4 palette[16];
+uniform vec4 halo_color;
+uniform float halo_width_in_pixel = 0.0;
+uniform float percentual_halo_width = 0.0;
+
+in vec4 position;
+in float point_size;
+in vec4 color;
+in int group_index;
+in uint color_index;
+in float depth_offset;
+
+out POINT_GS {
+	vec4 color;
+	vec4 halo_color;
+	float halo_width_in_pixel;
+	float percentual_halo_width;
+	float depth_offset;
+} vo;
+
+//***** begin interface of hyperbolic.glsl ***********************************
+vec4 hyperbolic_project(in vec4 p);
+vec4 hyperbolic_transform(in vec4 x);
+vec4 hyperbolic_mixture(in vec4 x, float t, in vec4 y);
+//***** end interface of hyperbolic.glsl ***********************************
+
+void main()
+{
+	vo.color = use_color_index ? vec4(palette[color_index]) : color;
+	vo.halo_color = halo_color;
+	vo.halo_width_in_pixel = halo_width_in_pixel;
+	vo.percentual_halo_width = percentual_halo_width;
+	vo.depth_offset = depth_offset;
+	vec4 p = hyperbolic_project(hyperbolic_transform(position));
+	gl_Position = vec4(p.xyz, 1.0);
+	gl_PointSize = p.w*point_size;
+}

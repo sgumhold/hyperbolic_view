@@ -1,0 +1,60 @@
+#version 330 core
+
+uniform float radius_scale = 1.0;
+uniform vec4 halo_color;
+uniform float halo_width_in_pixel = 0.0;
+uniform float percentual_halo_width = 0.0;
+
+in vec4  position;
+in float radius;
+in vec4  color;
+in int   group_index;
+
+out SPHERE_GS {
+	mat3 normal_matrix;
+	mat4 model_view_matrix;
+	mat4 model_view_projection_matrix;
+	vec4 color;
+	vec4 halo_color;
+	float halo_width_in_pixel;
+	float percentual_halo_width;
+} vo;
+
+//***** begin interface of view.glsl ***********************************
+mat4 get_modelview_matrix();
+mat4 get_projection_matrix();
+mat4 get_modelview_projection_matrix();
+mat4 get_inverse_modelview_matrix();
+mat4 get_inverse_modelview_projection_matrix();
+mat3 get_normal_matrix();
+mat3 get_inverse_normal_matrix();
+//***** end interface of view.glsl ***********************************
+
+//***** begin interface of sphere_lib.glvs ***********************************
+void output_sphere_parameter_space(in vec4 sphere, in mat4 MV, in mat4 MVP, in mat3 NM);
+//***** end interface of sphere_lib.glvs ***********************************
+
+//***** begin interface of hyperbolic.glsl ***********************************
+vec4 hyperbolic_project(in vec4 p);
+vec4 hyperbolic_transform(in vec4 x);
+vec4 hyperbolic_mixture(in vec4 x, float t, in vec4 y);
+//***** end interface of hyperbolic.glsl ***********************************
+
+void main()
+{
+	// compute normal transformation matrix
+	vo.normal_matrix = get_normal_matrix();
+	// compute position transformation matrix
+	vo.model_view_matrix = get_modelview_matrix();
+	vo.model_view_projection_matrix = get_modelview_projection_matrix();
+	// compute sphere color
+	vo.color = color;
+	// output sphere parameter space for geometry shader
+	vec4 q = hyperbolic_project(hyperbolic_transform(position));
+	gl_Position = vec4(q.xyz, 1.0);
+	gl_Position.w = q.w*radius_scale * radius;
+	vo.halo_width_in_pixel = halo_width_in_pixel;
+	vo.percentual_halo_width = percentual_halo_width;
+	vo.halo_color = halo_color;
+	output_sphere_parameter_space(gl_Position, vo.model_view_matrix, vo.model_view_projection_matrix, vo.normal_matrix);
+}
