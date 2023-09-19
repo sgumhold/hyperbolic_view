@@ -9,6 +9,9 @@
 #include <cgv/math/ftransform.h>
 #include <cgv/media/color.h>
 #include <cgv/gui/animate.h>
+#include <cgv/utils/file.h>
+#include <cgv/utils/advanced_scan.h>
+#include <cgv/base/register.h>
 #include <cgv/render/texture.h>
 #include <cgv/render/drawable.h>
 #include <cgv/render/view.h>
@@ -31,6 +34,7 @@
 
 class CGV_API hyperbolic_view :
 	public cgv::base::node,
+	public cgv::base::argument_handler,
 	public cgv::render::drawable,
 	public cgv::gui::event_handler,
 	public cgv::gui::provider
@@ -40,6 +44,15 @@ public:
 	dmat4 DPV;
 	cgv::render::view* view_ptr = 0;
 protected:
+	void handle_args(std::vector<std::string>& args)
+	{
+		if (args.size() < 3) {
+			std::cerr << "usage:" << cgv::utils::file::get_file_name(args[0])
+				<< " <node file> <link file>" << std::endl;
+			return;
+		}
+		read_network(args[1], args[2]);
+	}
 	cgv::render::shader_program point_prog;
 	cgv::render::shader_program edge_prog;
 	cgv::render::shader_program sphere_prog;
@@ -53,12 +66,12 @@ protected:
 	//cgv::render::shader_program cone_prog;
 	bool use_spheres = true;
 	bool use_cones = true;
-	float lambda = 0.0f;
+	float lambda = 1.0f;
 	unsigned nr_samples = 5;
 	int dimension = 2;
 	unsigned strip_length = 5;
 	vec3 translation = vec3(0.0f);
-	bool simple_translation = true;
+	bool simple_translation = false;
 	bool skip_first = true;
 	bool use_shader = true;
 	bool show_disk = false;
@@ -73,6 +86,23 @@ protected:
 	cgv::render::sphere_render_style srs;
 	cgv::render::cone_render_style crs;
 	cgv::render::line_render_style lrs;
+	void configure_dimension(int dim)
+	{
+		dimension = dim;
+		if (dim == 2) {
+			show_disk = true;
+			show_sphere = false;
+			skip_first = false;
+		}
+		else {
+			show_disk = false;
+			show_sphere = true;
+			skip_first = true;
+		}
+		on_set(&show_disk);
+		on_set(&show_sphere);
+		on_set(&skip_first);
+	}
 	///
 	void generate_network(unsigned n = 500, unsigned m = 1000)
 	{
@@ -91,25 +121,59 @@ protected:
 			I0.push_back(d_idx(e));
 		}
 	}
-	bool read_network(const std::string& fn_points, const std::string& fn_edges, int dim = 2)
+	bool read_network(const std::string& fn_points, const std::string& fn_edges, int dim = -1)
 	{
 		return read_points(fn_points, dim) && read_edges(fn_edges);
 	}
-	bool read_points(const std::string& fn, int dim = 2)
+	bool read_points(const std::string& fn, int dim = -1)
 	{
-		std::ifstream is(fn);
-		if (is.fail())
+		std::string content;
+		if (!cgv::utils::file::read(fn, content, true))
 			return false;
-		dimension = dim;
+		std::vector<cgv::utils::line> lines;
+		cgv::utils::split_to_lines(content, lines);
+		if (lines.size() < 2)
+			return false;
+		bool is_csv = false;
+		if (dim == -1) {
+			std::vector<cgv::utils::token> toks;
+			cgv::utils::split_to_tokens(lines[1], toks, "", false, "\"", "\"", " ;\t\n");
+			if (toks.size() >= 2) {
+				if (*toks.front().end == '"')
+					is_csv = true;
+				dim = int(toks.size());
+				if (is_csv)
+					--dim;
+				if (dim > 3)
+					dim = 3;
+			}
+		}
+		if (dim == -1)
+			return false;
+		configure_dimension(dim);
+
 		P0.clear();
-		float x1, x2, x3, x4 = 0.0f;
-		while (true) {
-			is >> x2 >> x3;
-			if (dim == 3)
-				is >> x4;
-			if (is.fail())
-				break;
-			x1 = sqrt(x2 * x2 + x3 * x3 + x4*x4 + 1.0f);
+		unsigned li = is_csv ? 1 : 0;
+		unsigned i0 = li;
+		unsigned n = is_csv ? dim + 1 : dim;
+		for (; li < lines.size(); ++li) {
+			cgv::utils::line l = lines[li];
+			std::vector<cgv::utils::token> toks;
+			cgv::utils::split_to_tokens(l, toks, "", false, "\"", "\"", " ;\t\n");
+			if (toks.size() < n)
+				continue;
+			double v[3] = { 0.0,0.0,0.0 };
+			int i = i0;
+			for (; i < n; ++i) {
+				std::string tok = cgv::utils::to_string(toks[i]);
+				cgv::utils::replace(tok, ',', '.');
+				if (!cgv::utils::is_double(tok, v[i-i0]))
+					break;
+			}
+			if (i < n)
+				continue;
+			float x2 = float(v[0]), x3 = float(v[1]), x4 = float(v[2]);
+			float x1 = sqrt(x2 * x2 + x3 * x3 + x4 * x4 + 1.0f);
 			P0.push_back(vec4(x1, x2, x3, x4));
 		}
 		return true;
@@ -207,8 +271,9 @@ public:
 	hyperbolic_view() : cgv::base::node("hyperbolic view")
 	{
 		//generate_network();
-		read_network("D:/data/graph/fb_hydra_adj.txt", "D:/data/graph/facebook_edgelist.txt");
-		//read_network("D:/data/graph/fb_hydra_adj_3d.txt", "D:/data/graph/facebook_edgelist.txt", 3);
+		//read_network("D:/data/graph/fb_hydra_adj.txt", "D:/data/graph/facebook_edgelist.txt");
+		read_network("D:/data/graph/fb_hydra_adj_3d.txt", "D:/data/graph/facebook_edgelist.txt");
+		//read_network("D:/data/graph/fb_hydra_adj_3d.csv", "D:/data/graph/facebook_edgelist.txt");
 		//read_network("D:/data/graph/fb_hydra_adj.txt", "D:/data/graph/facebook_edgelist_subsample.txt");
 		compute_points();
 		compute_edges();
@@ -295,9 +360,23 @@ public:
 	///
 	void draw(cgv::render::context& ctx)
 	{
-//		glDisable(GL_DEPTH_TEST);
-//		glEnable(GL_BLEND);
-//		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		if (show_disk) {
+			auto& sr = cgv::render::ref_surfel_renderer(ctx);
+			sr.set_render_style(disk_style);
+			sr.set_reference_point_size(1.0f);
+			vec3 p(0.0f);
+			vec3 n(1.0f, 0.0f, 0.0f);
+			sr.set_position(ctx, p);
+			sr.set_normal(ctx, n);
+			sr.render(ctx, 0, 1);
+		}
+		if (show_sphere) {
+			auto& sr = cgv::render::ref_sphere_renderer(ctx);
+			sr.set_render_style(sphere_style);
+			vec3 p(0.0f);
+			sr.set_position(ctx, p);
+			sr.render(ctx, 0, 1);
+		}
 		if (P0.size() > 0) {
 			ctx.set_color(srs.surface_color);
 			if (use_spheres) {
@@ -398,26 +477,6 @@ public:
 				}
 			}
 		}
-
-		if (show_disk) {
-			auto& sr = cgv::render::ref_surfel_renderer(ctx);
-			sr.set_render_style(disk_style);
-			sr.set_reference_point_size(1.0f);
-			vec3 p(0.0f);
-			vec3 n(0.0f, 0.0f, 1.0f);
-			sr.set_position(ctx, p);
-			sr.set_normal(ctx, n);
-			sr.render(ctx, 0, 1);
-		}
-		if (show_sphere) {
-			auto& sr = cgv::render::ref_sphere_renderer(ctx);
-			sr.set_render_style(sphere_style);
-			vec3 p(0.0f);
-			sr.set_position(ctx, p);
-			sr.render(ctx, 0, 1);
-		}
-		//		glDisable(GL_BLEND);
-//		glEnable(GL_DEPTH_TEST);
 	}
 	///
 	void clear(cgv::render::context& ctx)
@@ -582,3 +641,8 @@ public:
 #include "lib_begin.h"
 
 extern CGV_API cgv::base::object_registration<hyperbolic_view> hyperbolic_view_reg("register hyperbolic view");
+
+#ifdef REGISTER_SHADER_FILES
+#include <cgv/base/register.h>
+#include <hyperbolic_view_shader_inc.h>
+#endif

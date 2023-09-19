@@ -12,4 +12,8 @@ addProjectDeps=[
 addShaderPaths=[INPUT_DIR];
 addCommandLineArguments=['config:"'.INPUT_DIR.'/hyberbolic_view.def"', after("SHADER_PATHS", "cg_fltk")];
 addSharedDefines= ["HYPERBOLIC_VIEW_EXPORTS"];
+addIncDirs=[CGV_BUILD_DIR."/".projectName];
+if(SYSTEM=="windows") {
+	addStaticDefines=["REGISTER_SHADER_FILES"];
+}
 
