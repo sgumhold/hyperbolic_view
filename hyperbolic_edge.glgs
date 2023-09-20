@@ -1,14 +1,13 @@
 #version 330 core
 
 layout(lines) in;
-layout(triangle_strip, max_vertices = 40) out;
+layout(triangle_strip, max_vertices = 20) out;
 
 uniform bool  measure_line_width_in_pixel = true;
 uniform float reference_line_width = 1.0;
 uniform float blend_width_in_pixel = 1.0;
 uniform float viewport_height = 1080.0;
-uniform int   nr_samples;
-uniform int   strip_length;
+uniform int   nr_samples = 1;
 
 in LINE_GS {
 	int   instance_idx;
@@ -94,10 +93,13 @@ void main()
 		return;
 	if (gi[1].depth_offset > 100000.0)
 		return;
+	int nr_strips = max(1, nr_samples/5);
+	int strip_length = nr_samples < 5 ? nr_samples : 5;
+	int final_nr_samples = nr_strips * strip_length;
 	vec4 p0 = hyperbolic_transform(gi[0].position);
 	vec4 p1 = hyperbolic_transform(gi[1].position);
-	float t0 = float(gi[0].instance_idx) / nr_samples;
-	float s = 1.0f / (nr_samples*strip_length);
+	float t0 = float(gi[0].instance_idx) / nr_strips;
+	float s = 1.0f / final_nr_samples;
 	vec4 q0 = hyperbolic_project(hyperbolic_mixture(p0, t0, p1));
 	vec3 p_eye_start = (get_modelview_matrix()*vec4(q0.xyz, 1.0)).xyz;
 	vec3 p_eye_end;

@@ -3,7 +3,6 @@
 uniform float hyperbolic_lambda = 0.0;
 uniform vec3  hyperbolic_translation = vec3(0.0);
 uniform bool  simple_translation;
-uniform bool  skip_first;
 uniform int   dimension;
 /*
 The following interface is implemented in this shader:
@@ -27,10 +26,10 @@ vec4 hyperbolic_project(in vec4 p)
 	float sz = pow(temp*temp,1.0/float(dimension));
 	float sx = pow(x1,1.0/float(dimension));
 	float size = mix(sx,sz,hyperbolic_lambda);
-	if (skip_first)
+	if (dimension == 3)
 		return vec4(m.yzw,size);
 	else
-		return vec4(m.xyz,size);
+		return vec4(m.yzx,size);
 }
 
 vec4 hyperbolic_transform(in vec4 x)
