@@ -62,13 +62,12 @@ protected:
 	int dnd_x, dnd_y;
 	void handle_args(std::vector<std::string>& args)
 	{
-		if (args.size() < 3) {
-			std::cerr << "usage:" << cgv::utils::file::get_file_name(args[0])
-				<< " <node file> <link file>" << std::endl;
-			return;
+		for (size_t i = 0; i < args.size(); ) {
+			if (read_points_or_edges(args[i]))
+				args.erase(args.begin() + i);
+			else
+				++i;
 		}
-		read_points_or_edges(args[1]);
-		read_points_or_edges(args[2]);
 	}
 	cgv::render::shader_program point_prog;
 	cgv::render::shader_program edge_prog;
@@ -84,6 +83,7 @@ protected:
 	bool use_spheres = true;
 	bool use_cones = true;
 	float lambda = 1.0f;
+	float scale = 1.0f;
 	unsigned nr_samples = 12;
 	int dimension = 2;
 	vec3 translation = vec3(0.0f);
@@ -256,10 +256,16 @@ protected:
 					break;
 			}
 		}
-		if (are_edges)
+		if (are_edges) {
 			extract_edges(data);
-		else
+			edges_file_name = fn;
+			update_member(&edges_file_name);
+		}
+		else {
 			extract_points(data, dim);
+			points_file_name = fn;
+			update_member(&points_file_name);
+		}
 		if (edges_not_points_ptr)
 			*edges_not_points_ptr = are_edges;
 		return true;
@@ -373,7 +379,11 @@ public:
 	/// construct with initialized mesh
 	hyperbolic_view() : cgv::base::node("hyperbolic view")
 	{
+#ifdef _DEBUG
+		generate_network(100,500);
+#else
 		generate_network();
+#endif
 		compute_points();
 		compute_edges();
 		srs.radius = 0.02f;
@@ -385,6 +395,8 @@ public:
 		prs.halo_width_in_pixel = 0;
 		prs.blend_points = false;
 		prs.blend_width_in_pixel = 0;
+		prs.default_depth_offset = -0.0002f;
+		lrs.default_depth_offset = -0.0001f;
 		srs.surface_color = rgba(1, 0, 0, 1);
 		crs.surface_color = lrs.default_color = rgba(0.3f, 0.3f, 0.3f, 1.0f);
 		crs.rounded_caps = true;
@@ -417,23 +429,18 @@ public:
 	void on_set(void* member_ptr)
 	{
 		cgv::utils::pointer_test pt(member_ptr);
+		if (pt.is(scale)) {
+			srs.radius_scale = scale;
+			update_member(&srs.radius_scale);
+			crs.radius_scale = scale;
+			update_member(&crs.radius_scale);
+		}
 		if (pt.is(points_file_name))
 			read_points(points_file_name);
 		if (pt.is(edges_file_name))
 			read_edges(edges_file_name);
-		if (pt.is(file_name)) {
-			bool are_edges;
-			if (read_points_or_edges(file_name, &are_edges)) {
-				if (are_edges) {
-					edges_file_name = file_name;
-					update_member(&edges_file_name);
-				}
-				else {
-					points_file_name = file_name;
-					update_member(&points_file_name);
-				}
-			}
-		}
+		if (pt.is(file_name))
+			read_points_or_edges(file_name);
 		if (pt.member_of(crs.surface_color)) {
 			lrs.default_color = crs.surface_color;
 			for (int i=0; i<4; ++i)
@@ -635,10 +642,15 @@ public:
 					post_redraw();
 					return true;
 				case cgv::gui::MA_RELEASE:
-					read_points_or_edges(dnd_text);
-					post_redraw();
-					dnd_text = std::string();
-					return true;
+					{
+						std::vector<cgv::utils::line> lines;
+						split_to_lines(dnd_text, lines);
+						for (auto l:lines)
+							read_points_or_edges(to_string(l));
+						post_redraw();
+						dnd_text = std::string();
+						return true;
+					}
 				}
 			}
 			else if (me.get_modifiers() == cgv::gui::EM_ALT && get_context() != 0) {
@@ -654,9 +666,6 @@ public:
 					cgv::gui::animate_with_linear_blend(translation[1], q[2], 1, false)->set_base_ptr(this);
 					cgv::gui::animate_with_linear_blend(translation[2], q[3], 1, false)->set_base_ptr(this);
 					return true;
-//				case cgv::gui::MA_MOVE:
-					//std::cout << "p = " << p << " -> " << q << std::endl;
-//					break;
 				}
 			}
 		}
@@ -706,17 +715,33 @@ public:
 					cgv::gui::animate_with_linear_blend(translation[2], 0.0f, 0.2f*translation.length())->set_base_ptr(this);
 					return true;
 				case 'N' :
-					if (node_style == NS_SPHERE)
-						node_style = NS_HIDE;
-					else
-						++(int&)node_style;
+					if (ke.get_modifiers() == 0) {
+						if (node_style == NS_SPHERE)
+							node_style = NS_HIDE;
+						else
+							++(int&)node_style;
+					}
+					else {
+						if (node_style == NS_HIDE)
+							node_style = NS_SPHERE;
+						else
+							--(int&)node_style;
+					}
 					on_set(&node_style);
 					return true;
 				case 'L' :
-					if (link_style == LS_CONE)
-						link_style = LS_HIDE;
-					else
-						++(int&)link_style;
+					if (ke.get_modifiers() == 0) {
+						if (link_style == LS_CONE)
+							link_style = LS_HIDE;
+						else
+							++(int&)link_style;
+					}
+					else {
+						if (link_style == LS_HIDE)
+							link_style = LS_CONE;
+						else
+							--(int&)link_style;
+					}
 					on_set(&link_style);
 					return true;
 				case '0': 
@@ -743,7 +768,8 @@ public:
 	///
 	void create_gui()
 	{
-		add_view("node file", points_file_name);
+		add_decorator("Hyperbolic View", "heading");
+		add_member_control(this, "node file", points_file_name)->set("active", false);
 		add_view("edge file", edges_file_name);
 		add_gui("file_name", file_name, "file_name",
 			"w=160;open=true;open_title='open node or link file';filter='file (txt,csv):*.txt;*.csv|all files:*.*';");
@@ -769,11 +795,13 @@ public:
 			end_tree_node(sphere_style);
 		}
 
-		add_member_control(this, "use shader", use_shader, "toggle", "shortcut='X'");
+		//add_member_control(this, "use shader", use_shader, "toggle", "shortcut='X'");
+		add_member_control(this, "scale", scale, "value_slider", "min=0.01;max=10;log=true;ticks=true");
 		show = begin_tree_node("nodes", node_style, false, "options='w=60';align=' '");
 		add_member_control(this, "", srs.surface_color, "", "w=50", " ");
 		add_member_control(this, "", node_style, "dropdown", "w=60;enums='hide;point;sphere'");
 		if (show) {
+			align("\a");
 			if (begin_tree_node("point style", prs)) {
 				align("\a");
 				add_gui("style", prs);
@@ -786,12 +814,14 @@ public:
 				align("\b");
 				end_tree_node(srs);
 			}
+			align("\b");
 			end_tree_node(node_style);
 		}
 		show = begin_tree_node("links", link_style, false, "options='w=60';align=' '");
 		add_member_control(this, "", crs.surface_color, "", "w=50", " ");
 		add_member_control(this, "", link_style, "dropdown", "w=60;enums='hide;line;cone'");
 		if (show) {
+			align("\a");
 			add_member_control(this, "nr_samples", nr_samples, "value_slider", "min=1;max=50;log=true;ticks=true");
 			if (begin_tree_node("line style", lrs)) {
 				align("\a");
@@ -805,6 +835,8 @@ public:
 				align("\b");
 				end_tree_node(crs);
 			}
+			align("\b");
+			end_tree_node(nr_samples);
 		}
 	}
 };
@@ -817,6 +849,10 @@ public:
 #include "lib_begin.h"
 
 extern CGV_API cgv::base::object_registration<hyperbolic_view> hyperbolic_view_reg("register hyperbolic view");
+
+#ifdef CGV_FORCE_STATIC
+cgv::base::registration_order_definition ro_def("stereo_view_interactor;hyperbolic_view");
+#endif
 
 #ifdef REGISTER_SHADER_FILES
 #include <cgv/base/register.h>
